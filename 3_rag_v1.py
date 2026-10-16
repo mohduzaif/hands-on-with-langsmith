@@ -5,14 +5,18 @@ from dotenv import load_dotenv
 from langchain_community.document_loaders import PyPDFLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_openai import OpenAIEmbeddings, ChatOpenAI
+from langchain_cohere import CohereEmbeddings, ChatCohere
 from langchain_community.vectorstores import FAISS
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnableParallel, RunnablePassthrough, RunnableLambda
 from langchain_core.output_parsers import StrOutputParser
 
+# set the project name over the LangSmith Portal.
+os.environ['LANGCHAIN_PROJECT'] = 'Basic RAG APP'
+
 load_dotenv()  # expects OPENAI_API_KEY in .env
 
-PDF_PATH = "islr.pdf"  # <-- change to your PDF filename
+PDF_PATH = "all_pdfs/Data-Structure-Question-Bank.pdf"  
 
 # 1) Load PDF
 loader = PyPDFLoader(PDF_PATH)
@@ -23,9 +27,15 @@ splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=150)
 splits = splitter.split_documents(docs)
 
 # 3) Embed + index
-emb = OpenAIEmbeddings(model="text-embedding-3-small")
-vs = FAISS.from_documents(splits, emb)
-retriever = vs.as_retriever(search_type="similarity", search_kwargs={"k": 4})
+# initialize the embedding models.
+emb = CohereEmbeddings(
+    model = "embed-english-v3.0"
+) 
+# Create FAISS vector store
+vs = FAISS.from_documents(splits, embedding=emb)
+# create the similarity retrivers. 
+retriever = vs.as_retriever(search_type = 'similarity', search_kwargs = {'k' : 4})
+
 
 # 4) Prompt
 prompt = ChatPromptTemplate.from_messages([
@@ -34,7 +44,10 @@ prompt = ChatPromptTemplate.from_messages([
 ])
 
 # 5) Chain
-llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+llm = ChatCohere(
+    model="command-a-03-2025",
+    temperature=0
+)
 def format_docs(docs): return "\n\n".join(d.page_content for d in docs)
 
 parallel = RunnableParallel({
@@ -44,8 +57,19 @@ parallel = RunnableParallel({
 
 chain = parallel | prompt | llm | StrOutputParser()
 
+config = {
+    'run_name' : 'Basic RAG', 
+    'tags' : ['llm app', 'RAG APP', 'Retriver', 'loader'], 
+    'metadata' : {
+        'Chat_model' : 'command-a-03-2025',
+        'Embedding_model' : 'embed-english-v3.0',
+        'model_temperature' : 0.7, 
+        'parser' : 'stroutputparser'
+    }
+}
+
 # 6) Ask questions
 print("PDF RAG ready. Ask a question (or Ctrl+C to exit).")
 q = input("\nQ: ")
-ans = chain.invoke(q.strip())
+ans = chain.invoke(q.strip(), config = config)
 print("\nA:", ans)
